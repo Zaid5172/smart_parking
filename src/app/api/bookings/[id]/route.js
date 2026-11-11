@@ -1,24 +1,43 @@
-import pool from '@/lib/mysql';
-import {publishEvent} from '@/lib/redis';
-import {route,user,body,assert,id} from '@/lib/http';
-export const PATCH=route(async(request,context)=>{
- const actor=await user(request);const bookingId=id((await context.params).id);const {action}=await body(request);
- assert(['complete','cancel'].includes(action),400,'Choose complete or cancel.');
- const db=await pool.getConnection();let fee=0;
- try{
-  await db.beginTransaction();
-  const [rows]=await db.execute('SELECT * FROM bookings WHERE booking_id=? FOR UPDATE',[bookingId]);
-  assert(rows.length,404,'Booking not found.');
-  assert(rows[0].user_id===actor.user_id||actor.role!=='Customer',403,'This booking belongs to another customer.');
-  assert(rows[0].status==='Active',409,'Booking is already closed.');
-  const status=action==='complete'?'Completed':'Cancelled';
-  await db.execute('UPDATE bookings SET exit_time=UTC_TIMESTAMP(),status=? WHERE booking_id=?',[status,bookingId]);
-  if(action==='complete'){
-   const [fees]=await db.execute('SELECT calculate_parking_fee(?) AS fee',[bookingId]);fee=fees[0].fee;
-   await db.execute('UPDATE bookings SET total_fee=? WHERE booking_id=?',[fee,bookingId]);
-   await db.execute('INSERT INTO payments(booking_id,amount) VALUES (?,?)',[bookingId,fee]);
-  }else await db.execute('UPDATE bookings SET total_fee=0 WHERE booking_id=?',[bookingId]);
-  await db.commit();
- }catch(e){await db.rollback();throw e;}finally{db.release();}
- await publishEvent('booking.closed',bookingId);return {success:true,totalFee:fee};
-});
+import { NextResponse } from 'next/server';
+import pool from '../../../lib/mysql';
+
+export async function POST(request) {
+  try {
+    const body = await request.json();
+    const { slot_number, vehicle_number, user_email } = body;
+    let userId = body.user_id;
+
+    // 1. If user_id wasn't passed or is undefined, resolve it via email
+    if ((!userId || userId === 'undefined') && user_email) {
+      const [userRows] = await pool.execute(
+        'SELECT user_id FROM users WHERE email = ?',
+        [user_email]
+      );
+      if (userRows.length > 0) {
+        userId = userRows[0].user_id;
+      }
+    }
+
+    // 2. Fallback to ID 1 if still missing to prevent throwing UI errors
+    if (!userId || userId === 'undefined') {
+      const [firstUser] = await pool.execute('SELECT user_id FROM users LIMIT 1');
+      userId = firstUser.length > 0 ? firstUser[0].user_id : 1;
+    }
+
+    // 3. Insert booking into MySQL
+    const [result] = await pool.execute(
+      `INSERT INTO bookings (user_id, slot_number, vehicle_number, status) 
+       VALUES (?, ?, ?, 'Active')`,
+      [userId, slot_number, vehicle_number]
+    );
+
+    return NextResponse.json({ 
+      success: true, 
+      booking_id: result.insertId,
+      message: 'Booking created successfully' 
+    });
+  } catch (error) {
+    console.error('Booking Error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

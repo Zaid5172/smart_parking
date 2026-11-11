@@ -17,9 +17,10 @@ const {hashPassword}=require('../src/lib/security.cjs');
    }
   }
   await db.beginTransaction();
-  await db.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?),(?,?,?,?)',['Demo Customer','customer@parking.local',hashPassword(process.env.SEED_CUSTOMER_PASSWORD),'Customer','Demo Staff','staff@parking.local',hashPassword(process.env.SEED_STAFF_PASSWORD),'Staff']);
+  await db.execute('INSERT INTO users(name,email,password_hash,role) VALUES (?,?,?,?),(?,?,?,?),(?,?,?,?)',['Demo Customer','customer@parking.local',hashPassword(process.env.SEED_CUSTOMER_PASSWORD),'Customer','Demo Staff','staff@parking.local',hashPassword(process.env.SEED_STAFF_PASSWORD),'Staff','Demo Admin','admin@parking.local',hashPassword(process.env.SEED_STAFF_PASSWORD),'Admin']);
   await db.execute("INSERT INTO parking_lots(name,location,total_capacity) VALUES ('Campus Central','Main entrance',12),('Library EV Hub','North gate',6)");
   for(let n=1;n<=18;n++)await db.execute('INSERT INTO parking_slots(lot_id,slot_number,slot_type,status) VALUES (?,?,?,?)',[n<=12?1:2,`P-${String(n).padStart(2,'0')}`,n>12?'EV':n===1?'Accessible':'Standard',n===12?'Maintenance':'Available']);
   await db.commit();console.log('Schema and demo users created. No passwords printed.');
  }finally{await db.end();}
 })().catch(e=>{console.error(e.message);process.exitCode=1;});
+

@@ -1,7 +1,47 @@
-import pool from '@/lib/mysql';
-import {route,user} from '@/lib/http';
-export const GET=route(async request=>{
- const actor=await user(request);
- const [bookings]=await pool.execute(`SELECT b.*,s.slot_number,v.license_plate,calculate_parking_fee(b.booking_id) AS estimated_fee FROM bookings b JOIN parking_slots s ON s.slot_id=b.slot_id JOIN vehicles v ON v.vehicle_id=b.vehicle_id WHERE ${actor.role==='Customer'?'b.user_id=?':'1=1'} ORDER BY b.booking_id DESC LIMIT 100`,actor.role==='Customer'?[actor.user_id]:[]);
- return {bookings};
-});
+import { NextResponse } from 'next/server';
+import pool from '../../../lib/mysql';
+
+// GET: Fetch active bookings along with user identity
+export async function GET() {
+  try {
+    const [rows] = await pool.execute(`
+      SELECT 
+        b.booking_id,
+        b.slot_number,
+        b.vehicle_number,
+        b.status,
+        b.start_time,
+        u.user_id,
+        COALESCE(u.name, u.email) AS booked_by_user,
+        u.email AS user_email
+      FROM bookings b
+      JOIN users u ON b.user_id = u.user_id
+      ORDER BY b.booking_id DESC
+    `);
+
+    return NextResponse.json({ bookings: rows });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// POST: Reserve a slot linked directly to user_id
+export async function POST(request) {
+  try {
+    const { user_id, slot_number, vehicle_number } = await request.json();
+
+    if (!user_id) {
+      return NextResponse.json({ error: 'User ID is missing. Please re-login.' }, { status: 400 });
+    }
+
+    const [result] = await pool.execute(
+      `INSERT INTO bookings (user_id, slot_number, vehicle_number, status) 
+       VALUES (?, ?, ?, 'Active')`,
+      [user_id, slot_number, vehicle_number]
+    );
+
+    return NextResponse.json({ success: true, booking_id: result.insertId });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

@@ -1,9 +1,119 @@
 'use client';
-import {useState} from 'react';
-import {api,useLoad,Notice} from '@/components/client';
-export default function Incidents(){const reports=useLoad('/incidents'),slots=useLoad('/parking/slots'),auth=useLoad('/auth/me');const [error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
- async function act(path,method,data){setBusy(true);setError('');setMessage('');try{await api(path,method,data);setMessage('Report updated.');await reports.load();return true;}catch(e){setError(e.message);return false;}finally{setBusy(false);}}
- async function submit(e){e.preventDefault();const form=e.target;if(await act('/incidents','POST',Object.fromEntries(new FormData(form))))form.reset();}
- const staff=auth.data&&auth.data.user.role!=='Customer';
- return <><div className="page-title"><div><span className="eyebrow">KEEP OUR CAMPUS MOVING</span><h1>A safer place to park.</h1><p>Report a problem and track its resolution.</p></div></div><Notice error={error||reports.error||slots.error} message={message}/><div className="two-col"><section className="card"><h2>Report an incident</h2><form onSubmit={submit}><label>Parking space<select name="slotId" required><option value="">Choose a space</option>{slots.data?.slots.map(s=><option key={s.id} value={s.id}>{s.number} · {s.lot}</option>)}</select></label><div className="form-row"><label>Category<select name="category">{['Property Damage','Barrier Malfunction','Unauthorized Parking','Security'].map(v=><option key={v}>{v}</option>)}</select></label><label>Severity<select name="severity">{['Low','Medium','High'].map(v=><option key={v}>{v}</option>)}</select></label></div><label>Description<textarea name="description" rows={5} required minLength={10} maxLength={2000} placeholder="Describe what happened (10–2000 characters)"/></label><button disabled={busy}>Submit report</button></form></section><section className="card"><h2>{staff?'Incident desk':'Your reports'}</h2>{reports.data?.incidents.length===0&&<p>No incidents reported.</p>}{reports.data?.incidents.map(i=><article className="incident" key={i.incident_id}><div className="section-heading"><h3>#{i.incident_id} · {i.slot_number}</h3><span className="badge">{i.severity}</span></div><p><strong>{i.category}</strong></p><p>{i.description}</p><small>{i.status}</small>{staff&&<label>Update status<select disabled={busy} value={i.status} onChange={e=>act('/incidents','PATCH',{incidentId:i.incident_id,status:e.target.value})}>{['Open','Under Investigation','Resolved'].map(v=><option key={v}>{v}</option>)}</select></label>}{i.status==='Open'&&i.user_id===auth.data?.user.user_id&&<button className="subtle" disabled={busy} onClick={()=>act('/incidents?id='+i.incident_id,'DELETE')}>Withdraw report</button>}</article>)}</section></div></>;
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+
+export default function ReportIncidentPage() {
+  const [user, setUser] = useState(null);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [slotNumber, setSlotNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        console.error('Failed to parse user', e);
+      }
+    }
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage('');
+
+    try {
+      const res = await fetch('/api/incidents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user?.user_id || user?.id || null,
+          user_email: user?.email || 'Anonymous',
+          title,
+          description,
+          slot_number: slotNumber
+        }),
+      });
+
+      if (res.ok) {
+        setMessage('Incident reported successfully!');
+        setTitle('');
+        setDescription('');
+        setSlotNumber('');
+      } else {
+        const data = await res.json();
+        setMessage(`Error: ${data.error || 'Failed to submit incident'}`);
+      }
+    } catch (err) {
+      setMessage('Failed to connect to server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: '600px', margin: '3rem auto', padding: '1.5rem', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+      <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>Report a Parking Incident</h2>
+      <p style={{ color: '#64748b', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+        Reporting as: <strong>{user ? `${user.name || user.email} (${user.email})` : 'Guest / Not Signed In'}</strong>
+      </p>
+
+      {message && (
+        <div style={{ padding: '0.75rem', borderRadius: '8px', marginBottom: '1rem', background: message.startsWith('Error') ? '#fee2e2' : '#dcfce7', color: message.startsWith('Error') ? '#991b1b' : '#166534' }}>
+          {message}
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div>
+          <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.25rem' }}>Issue Title</label>
+          <input
+            type="text"
+            placeholder="e.g., Unauthorized vehicle parked in my reserved slot"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            required
+            style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.25rem' }}>Slot Number / Location</label>
+          <input
+            type="text"
+            placeholder="e.g., A-102"
+            value={slotNumber}
+            onChange={(e) => setSlotNumber(e.target.value)}
+            required
+            style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+        </div>
+
+        <div>
+          <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.25rem' }}>Detailed Description</label>
+          <textarea
+            rows="4"
+            placeholder="Provide details about the issue..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            required
+            style={{ width: '100%', padding: '0.75rem', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          style={{ padding: '0.75rem', background: '#166534', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer' }}
+        >
+          {loading ? 'Submitting...' : 'Submit Report'}
+        </button>
+      </form>
+    </div>
+  );
 }

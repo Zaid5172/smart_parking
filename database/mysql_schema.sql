@@ -3,6 +3,7 @@ CREATE TABLE users (
  user_id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
  email VARCHAR(150) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL,
  role ENUM('Customer','Staff','Admin') NOT NULL DEFAULT 'Customer',
+ phone VARCHAR(20) NULL,
  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE sessions (
@@ -25,6 +26,8 @@ CREATE TABLE parking_slots (
 CREATE TABLE vehicles (
  vehicle_id INT AUTO_INCREMENT PRIMARY KEY, user_id INT NOT NULL,
  license_plate VARCHAR(20) NOT NULL UNIQUE,
+ make_model VARCHAR(100) NULL,
+ created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY(user_id) REFERENCES users(user_id),
  UNIQUE KEY uq_vehicle_owner(vehicle_id,user_id)
 );
@@ -33,7 +36,11 @@ CREATE TABLE bookings (
  slot_id INT NOT NULL, vehicle_id INT NOT NULL,
  entry_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, exit_time TIMESTAMP NULL,
  total_fee DECIMAL(10,2) NULL CHECK(total_fee>=0),
- status ENUM('Active','Completed','Cancelled') NOT NULL DEFAULT 'Active',
+ status ENUM('Active','Scheduled','Completed','Cancelled') NOT NULL DEFAULT 'Active',
+ booking_type ENUM('Instant','Scheduled') NOT NULL DEFAULT 'Instant',
+ start_time TIMESTAMP NULL,
+ end_time TIMESTAMP NULL,
+ time_slot VARCHAR(60) NULL,
  active_slot INT GENERATED ALWAYS AS (CASE WHEN status='Active' THEN slot_id ELSE NULL END) STORED,
  active_vehicle INT GENERATED ALWAYS AS (CASE WHEN status='Active' THEN vehicle_id ELSE NULL END) STORED,
  UNIQUE(active_slot), UNIQUE(active_vehicle),
@@ -70,7 +77,11 @@ CREATE FUNCTION calculate_parking_fee(p_booking_id INT) RETURNS DECIMAL(10,2)
  NOT DETERMINISTIC READS SQL DATA
 BEGIN
  DECLARE v_fee DECIMAL(10,2);
- SELECT CASE WHEN status='Cancelled' THEN 0 ELSE ROUND(GREATEST(TIMESTAMPDIFF(SECOND,entry_time,COALESCE(exit_time,UTC_TIMESTAMP()))/3600*20,15),2) END
+ SELECT CASE
+   WHEN status='Cancelled' THEN 0
+   WHEN end_time IS NOT NULL AND start_time IS NOT NULL THEN ROUND(GREATEST(TIMESTAMPDIFF(SECOND,start_time,end_time)/3600*20,15),2)
+   ELSE ROUND(GREATEST(TIMESTAMPDIFF(SECOND,entry_time,COALESCE(exit_time,UTC_TIMESTAMP()))/3600*20,15),2)
+ END
  INTO v_fee FROM bookings WHERE booking_id=p_booking_id;
  RETURN v_fee;
 END //
