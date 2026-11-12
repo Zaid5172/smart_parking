@@ -74,6 +74,12 @@ export default function LoginPage() {
             {error}
           </div>
         )}
+        <p style={{ textAlign: 'center', fontSize: '0.875rem', color: '#64748b', marginTop: '1.25rem', marginBottom: 0 }}>
+  New to ParkWise?{' '}
+  <a href="/register" style={{ color: '#166534', fontWeight: '600', textDecoration: 'none' }}>
+    Create an account
+  </a>
+</p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
